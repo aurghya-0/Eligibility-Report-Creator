@@ -2,21 +2,17 @@ import sys
 import os
 import re
 import pandas as pd
-from PyQt5.QtWidgets import (
+from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QPushButton, QFileDialog,
-    QMessageBox, QLabel, QListWidget, QListWidgetItem, QCheckBox, QHBoxLayout, QLineEdit
+    QMessageBox, QLabel, QListWidget, QListWidgetItem, QCheckBox, QLineEdit
 )
-from PyQt5.QtCore import Qt
+from PySide6.QtCore import Qt
 from eligibility_processor import extract_subject_codes, process_file
-os.environ["QT_QPA_PLATFORM"] = "xcb"
 
 class EligibilityReportApp(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Eligibility Report Generator")
-        self.setWindowFlags(Qt.Window | Qt.CustomizeWindowHint | Qt.WindowTitleHint | 
-                    Qt.WindowCloseButtonHint | Qt.WindowMinimizeButtonHint | 
-                    Qt.WindowMaximizeButtonHint)
         self.setGeometry(100, 100, 600, 500)
 
         self.input_filepath = ""
@@ -49,7 +45,6 @@ class EligibilityReportApp(QWidget):
         layout.addWidget(self.search_box)
 
         self.subject_list = QListWidget()
-        self.subject_list.setSelectionMode(QListWidget.MultiSelection)
         layout.addWidget(self.subject_list)
 
         self.combine_checkbox = QCheckBox("Combine Subjects into One PDF")
@@ -114,4 +109,4 @@ if __name__ == '__main__':
     app = QApplication(sys.argv)
     window = EligibilityReportApp()
     window.show()
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
