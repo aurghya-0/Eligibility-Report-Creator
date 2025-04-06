@@ -6,8 +6,10 @@ A modern and user-friendly desktop tool that processes Excel attendance data to 
 
 ![Screenshot](./Eligibility_Generator_Screenshot.png)
 
+
 **Sample Export File**
 ![Export](./Sample_Export_File.png)
+
 ---
 
 ## ✨ Features
