@@ -1,119 +1,117 @@
+import sys
 import os
-from tkinter import *
-from tkinter import ttk, filedialog, messagebox
-import threading
+import re
+import pandas as pd
+from PyQt5.QtWidgets import (
+    QApplication, QWidget, QVBoxLayout, QPushButton, QFileDialog,
+    QMessageBox, QLabel, QListWidget, QListWidgetItem, QCheckBox, QHBoxLayout, QLineEdit
+)
+from PyQt5.QtCore import Qt
 from eligibility_processor import extract_subject_codes, process_file
+os.environ["QT_QPA_PLATFORM"] = "xcb"
 
-class EligibilityApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Eligibility Report Generator")
-        self.root.geometry("800x600")
+class EligibilityReportApp(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Eligibility Report Generator")
+        self.setWindowFlags(Qt.Window | Qt.CustomizeWindowHint | Qt.WindowTitleHint | 
+                    Qt.WindowCloseButtonHint | Qt.WindowMinimizeButtonHint | 
+                    Qt.WindowMaximizeButtonHint)
+        self.setGeometry(100, 100, 600, 500)
 
         self.input_filepath = ""
         self.output_folder_path = ""
-        self.subject_checkboxes = {}
-        self.subject_vars = {}
-        self.combine_subjects = BooleanVar()
+        self.subjects = []
+        self.selected_subjects = set()
 
-        # Top Buttons
-        frame = Frame(root)
-        frame.pack(pady=10)
+        self.initUI()
 
-        Button(frame, text="Select Excel File", command=self.select_file).grid(row=0, column=0, padx=5)
-        Button(frame, text="Select Output Folder", command=self.select_folder).grid(row=0, column=1, padx=5)
+    def initUI(self):
+        layout = QVBoxLayout()
 
-        # Combine Checkbox
-        Checkbutton(root, text="Combine Subjects into One PDF", variable=self.combine_subjects).pack(pady=5)
+        self.file_label = QLabel("No Excel file selected.")
+        layout.addWidget(self.file_label)
 
-        # Search Entry
-        search_frame = Frame(root)
-        search_frame.pack(pady=5)
-        Label(search_frame, text="Search Subject:").pack(side=LEFT, padx=5)
-        self.search_var = StringVar()
-        self.search_var.trace("w", self.filter_subjects)
-        Entry(search_frame, textvariable=self.search_var, width=50).pack(side=LEFT)
+        self.select_file_btn = QPushButton("Select Excel File")
+        self.select_file_btn.clicked.connect(self.select_file)
+        layout.addWidget(self.select_file_btn)
 
-        # Scrollable Subject Selection
-        self.subject_frame = Frame(root)
-        self.subject_frame.pack(fill=BOTH, expand=True, pady=10)
-        canvas = Canvas(self.subject_frame)
-        scrollbar = Scrollbar(self.subject_frame, orient=VERTICAL, command=canvas.yview)
-        self.scrollable_frame = Frame(canvas)
+        self.folder_label = QLabel("No output folder selected.")
+        layout.addWidget(self.folder_label)
 
-        self.scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
+        self.select_folder_btn = QPushButton("Select Output Folder")
+        self.select_folder_btn.clicked.connect(self.select_folder)
+        layout.addWidget(self.select_folder_btn)
 
-        canvas.pack(side=LEFT, fill=BOTH, expand=True)
-        scrollbar.pack(side=RIGHT, fill=Y)
+        self.search_box = QLineEdit()
+        self.search_box.setPlaceholderText("Search subjects...")
+        self.search_box.textChanged.connect(self.filter_subjects)
+        layout.addWidget(self.search_box)
 
-        # Bottom Buttons
-        Button(root, text="Export Selected Subjects", command=self.export_selected).pack(pady=10)
-        Button(root, text="Export All PDFs", command=self.export_all).pack()
+        self.subject_list = QListWidget()
+        self.subject_list.setSelectionMode(QListWidget.MultiSelection)
+        layout.addWidget(self.subject_list)
+
+        self.combine_checkbox = QCheckBox("Combine Subjects into One PDF")
+        layout.addWidget(self.combine_checkbox)
+
+        self.export_button = QPushButton("Generate Reports")
+        self.export_button.clicked.connect(self.export_reports)
+        layout.addWidget(self.export_button)
+
+        self.setLayout(layout)
 
     def select_file(self):
-        filepath = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx *.xls")])
+        filepath, _ = QFileDialog.getOpenFileName(self, "Select Excel File", "", "Excel Files (*.xlsx *.xls)")
         if filepath:
             self.input_filepath = filepath
+            self.file_label.setText(f"Selected File: {os.path.basename(filepath)}")
             self.load_subjects()
 
     def select_folder(self):
-        folder_path = filedialog.askdirectory()
+        folder_path = QFileDialog.getExistingDirectory(self, "Select Output Folder")
         if folder_path:
             self.output_folder_path = folder_path
+            self.folder_label.setText(f"Selected Output Folder: {folder_path}")
 
     def load_subjects(self):
-        subjects, df = extract_subject_codes(self.input_filepath)
-        self.df = df
-        self.subject_checkboxes.clear()
-        self.subject_vars.clear()
-
-        for widget in self.scrollable_frame.winfo_children():
-            widget.destroy()
-
-        for code, name in subjects:
-            var = BooleanVar()
-            cb = Checkbutton(self.scrollable_frame, text=f"{code} - {name}", variable=var, anchor="w", width=80, justify=LEFT)
-            cb.pack(fill=X, anchor="w")
-            self.subject_checkboxes[f"{code} - {name}"] = cb
-            self.subject_vars[f"{code} - {name}"] = (var, code)
-
-    def filter_subjects(self, *args):
-        search_term = self.search_var.get().lower()
-        for key, cb in self.subject_checkboxes.items():
-            if search_term in key.lower():
-                cb.pack(fill=X, anchor="w")
-            else:
-                cb.pack_forget()
-
-    def export_selected(self):
-        selected_codes = [code for key, (var, code) in self.subject_vars.items() if var.get()]
-        if not self.input_filepath or not self.output_folder_path:
-            messagebox.showwarning("Missing Info", "Please select both input file and output folder.")
-            return
-        if not selected_codes:
-            messagebox.showinfo("No Subjects", "Please select at least one subject to export.")
-            return
-
-        threading.Thread(target=self.run_process, args=(selected_codes,), daemon=True).start()
-
-    def export_all(self):
-        all_codes = [code for _, code in self.subject_vars.values()]
-        if not self.input_filepath or not self.output_folder_path:
-            messagebox.showwarning("Missing Info", "Please select both input file and output folder.")
-            return
-
-        threading.Thread(target=self.run_process, args=(all_codes,), daemon=True).start()
-
-    def run_process(self, codes):
         try:
-            output_file = process_file(self.df.copy(), codes, self.output_folder_path, self.combine_subjects.get())
-            messagebox.showinfo("Success", f"Reports generated successfully.\n\nSaved to:\n{output_file}")
+            self.subjects, self.df = extract_subject_codes(self.input_filepath)
+            self.subject_list.clear()
+            for code, name in self.subjects:
+                item = QListWidgetItem(f"{code} - {name}")
+                item.setData(Qt.UserRole, code)
+                item.setCheckState(Qt.Unchecked)
+                self.subject_list.addItem(item)
         except Exception as e:
-            messagebox.showerror("Error", f"An error occurred:\n{str(e)}")
+            QMessageBox.critical(self, "Error", f"Failed to load subjects: {e}")
 
-if __name__ == "__main__":
-    root = Tk()
-    app = EligibilityApp(root)
-    root.mainloop()
+    def filter_subjects(self, text):
+        for i in range(self.subject_list.count()):
+            item = self.subject_list.item(i)
+            item.setHidden(text.lower() not in item.text().lower())
+
+    def export_reports(self):
+        selected_codes = [self.subject_list.item(i).data(Qt.UserRole)
+                          for i in range(self.subject_list.count())
+                          if self.subject_list.item(i).checkState() == Qt.Checked]
+
+        if not self.input_filepath or not self.output_folder_path:
+            QMessageBox.warning(self, "Warning", "Please select both input file and output folder.")
+            return
+
+        if not selected_codes:
+            QMessageBox.warning(self, "Warning", "Please select at least one subject.")
+            return
+
+        try:
+            process_file(self.df, selected_codes, self.output_folder_path, self.combine_checkbox.isChecked())
+            QMessageBox.information(self, "Success", "Reports generated successfully!")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to generate reports: {e}")
+
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    window = EligibilityReportApp()
+    window.show()
+    sys.exit(app.exec_())
