@@ -1,295 +1,119 @@
-import pandas as pd
-import re
 import os
 from tkinter import *
 from tkinter import ttk, filedialog, messagebox
-from openpyxl import load_workbook
-from openpyxl.chart import BarChart, Reference
-from openpyxl.formatting.rule import ColorScaleRule
-from reportlab.lib.pagesizes import A4, landscape
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib import colors
-from reportlab.lib.units import inch
 import threading
+from eligibility_processor import extract_subject_codes, process_file
 
-selected_subjects = set()
-subject_code_name_map = {}
-input_filepath = ""
-output_folder_path = ""
+class EligibilityApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Eligibility Report Generator")
+        self.root.geometry("800x600")
 
-def make_safe(name):
-    return re.sub(r'\W+', '_', str(name)).strip('_')
+        self.input_filepath = ""
+        self.output_folder_path = ""
+        self.subject_checkboxes = {}
+        self.subject_vars = {}
+        self.combine_subjects = BooleanVar()
 
-def export_pdf(subject_code, df, folder_path):
-    filename = os.path.join(folder_path, f"{subject_code}_eligibility.pdf")
-    pdf = SimpleDocTemplate(
-        filename,
-        pagesize=A4,
-        rightMargin=40,
-        leftMargin=40,
-        topMargin=60,
-        bottomMargin=40
-    )
-    elements = []
-    styles = getSampleStyleSheet()
-    normal_style = styles["Normal"]
+        # Top Buttons
+        frame = Frame(root)
+        frame.pack(pady=10)
 
-    # University header
-    header_text = Paragraph(
-        "<b>NSHM Knowledge Campus, Durgapur</b><br/>"
-        "Affiliated to MAKAUT, West Bengal<br/>"
-        f"<b>Subject Eligibility Report</b><br/><b>Subject Code:</b> {subject_code}",
-        ParagraphStyle(
-            name="UniversityHeader",
-            parent=styles["Title"],
-            fontSize=14,
-            leading=18,
-            alignment=1,
-            spaceAfter=20,
-        )
-    )
-    elements.append(header_text)
-    elements.append(Spacer(1, 10))
+        Button(frame, text="Select Excel File", command=self.select_file).grid(row=0, column=0, padx=5)
+        Button(frame, text="Select Output Folder", command=self.select_folder).grid(row=0, column=1, padx=5)
 
-    # Group by Programme and Section
-    grouped = df.groupby(['Programme', 'Programme Section'])
-    for (programme, section), section_df in grouped:
-        # Section title with both Programme and Section
-        section_title = Paragraph(
-            f"<b>Programme:</b> {programme} | <b>Section:</b> {section}",
-            ParagraphStyle(
-                name="SectionHeader",
-                fontSize=12,
-                leading=14,
-                spaceBefore=12,
-                spaceAfter=8
-            )
-        )
-        elements.append(section_title)
-        section_df = section_df[[ 'Student', 'Registration Id', 'Present %', 'Overall Present %' ]]
+        # Combine Checkbox
+        Checkbutton(root, text="Combine Subjects into One PDF", variable=self.combine_subjects).pack(pady=5)
 
-        # Prepare column widths based on available width
-        total_width = A4[0] - 80  # page width minus left/right margins
-        num_columns = len(section_df.columns)
-        col_width = total_width / num_columns
-        col_widths = [col_width] * num_columns
+        # Search Entry
+        search_frame = Frame(root)
+        search_frame.pack(pady=5)
+        Label(search_frame, text="Search Subject:").pack(side=LEFT, padx=5)
+        self.search_var = StringVar()
+        self.search_var.trace("w", self.filter_subjects)
+        Entry(search_frame, textvariable=self.search_var, width=50).pack(side=LEFT)
 
-        # Wrap headers and cells in Paragraph
-        data = [[Paragraph(str(cell), normal_style) for cell in section_df.columns]]
-        for row in section_df.itertuples(index=False):
-            data.append([Paragraph(str(cell), normal_style) for cell in row])
+        # Scrollable Subject Selection
+        self.subject_frame = Frame(root)
+        self.subject_frame.pack(fill=BOTH, expand=True, pady=10)
+        canvas = Canvas(self.subject_frame)
+        scrollbar = Scrollbar(self.subject_frame, orient=VERTICAL, command=canvas.yview)
+        self.scrollable_frame = Frame(canvas)
 
-        # Create the table
-        table = Table(data, repeatRows=1, colWidths=col_widths)
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#E5E5E5")),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-            ('FONTSIZE', (0, 0), (-1, 0), 10),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
-            ('GRID', (0, 0), (-1, -1), 0.4, colors.grey),
-            ('FONTSIZE', (0, 1), (-1, -1), 9),
-            ('ALIGN', (0, 1), (-1, -1), 'LEFT'),
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('WORDWRAP', (0, 0), (-1, -1), 'CJK'),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#F9F9F9")])
-        ]))
-        elements.append(table)
-        elements.append(Spacer(1, 16))
+        self.scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
 
-    pdf.build(elements)
+        canvas.pack(side=LEFT, fill=BOTH, expand=True)
+        scrollbar.pack(side=RIGHT, fill=Y)
 
-def clean_data(df):
-    df.ffill(inplace=True)
-    df.dropna(subset=['Registration Id', 'Student', 'Present %', 'Course [Course Code]'], inplace=True)
-    df['Present %'] = pd.to_numeric(df['Present %'], errors='coerce')
-    df['Overall Present %'] = pd.to_numeric(df['Overall Present %'], errors='coerce')
-    df.dropna(subset=['Present %', 'Overall Present %'], inplace=True)
-    return df
+        # Bottom Buttons
+        Button(root, text="Export Selected Subjects", command=self.export_selected).pack(pady=10)
+        Button(root, text="Export All PDFs", command=self.export_all).pack()
 
-def extract_subject_codes(filepath):
-    df = pd.read_excel(filepath)
-    df = clean_data(df)
-    df['Subject Code'] = df['Course [Course Code]'].apply(
-        lambda x: re.search(r'\[(.*?)\]', str(x)).group(1) if pd.notna(x) and '[' in str(x) else 'Unknown'
-    )
-    df['Subject Name'] = df['Course [Course Code]'].apply(
-        lambda x: str(x).split(' [')[0] if pd.notna(x) else 'Unknown'
-    )
-    unique = df[['Subject Code', 'Subject Name']].drop_duplicates()
-    return list(unique.itertuples(index=False, name=None)), df
+    def select_file(self):
+        filepath = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx *.xls")])
+        if filepath:
+            self.input_filepath = filepath
+            self.load_subjects()
 
-def process_file(df, selected_subject_codes):
-    df['Present %'] = pd.to_numeric(df['Present %'], errors='coerce')
-    df['Overall Present %'] = pd.to_numeric(df['Overall Present %'], errors='coerce')
+    def select_folder(self):
+        folder_path = filedialog.askdirectory()
+        if folder_path:
+            self.output_folder_path = folder_path
 
-    overall_eligible = df[['Registration Id', 'Overall Present %']].drop_duplicates()
-    overall_eligible['Eligible for All Subjects'] = overall_eligible['Overall Present %'] >= 75
-    df = df.merge(overall_eligible[['Registration Id', 'Eligible for All Subjects']], on='Registration Id', how='left')
-    df['Subject Eligible'] = df.apply(
-        lambda row: True if row['Eligible for All Subjects'] else row['Present %'] >= 75, axis=1
-    )
+    def load_subjects(self):
+        subjects, df = extract_subject_codes(self.input_filepath)
+        self.df = df
+        self.subject_checkboxes.clear()
+        self.subject_vars.clear()
 
-    df['Subject Code'] = df['Course [Course Code]'].apply(
-        lambda x: re.search(r'\[(.*?)\]', str(x)).group(1) if pd.notna(x) and '[' in str(x) else 'Unknown'
-    )
-    df['Subject Name'] = df['Course [Course Code]'].apply(
-        lambda x: str(x).split(' [')[0] if pd.notna(x) else 'Unknown'
-    )
+        for widget in self.scrollable_frame.winfo_children():
+            widget.destroy()
 
-    df['Subject Code Safe'] = df['Subject Code'].apply(make_safe)
+        for code, name in subjects:
+            var = BooleanVar()
+            cb = Checkbutton(self.scrollable_frame, text=f"{code} - {name}", variable=var, anchor="w", width=80, justify=LEFT)
+            cb.pack(fill=X, anchor="w")
+            self.subject_checkboxes[f"{code} - {name}"] = cb
+            self.subject_vars[f"{code} - {name}"] = (var, code)
 
-    summary = df.groupby(['Subject Code', 'Subject Name']).agg(
-        Total_Students=('Registration Id', 'nunique'),
-        Eligible_Students=('Subject Eligible', lambda x: df.loc[x.index, 'Registration Id'][x].nunique())
-    ).reset_index()
-    summary['Eligibility %'] = round((summary['Eligible_Students'] / summary['Total_Students']) * 100, 2)
+    def filter_subjects(self, *args):
+        search_term = self.search_var.get().lower()
+        for key, cb in self.subject_checkboxes.items():
+            if search_term in key.lower():
+                cb.pack(fill=X, anchor="w")
+            else:
+                cb.pack_forget()
 
-    output_file = os.path.join(output_folder_path, "subjectwise_eligibility.xlsx")
-    with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
-        for subject_code in df['Subject Code'].unique():
-            if subject_code not in selected_subject_codes:
-                continue
-            sub_df = df[(df['Subject Code'] == subject_code) & (df['Subject Eligible'])].copy()
-            if sub_df.empty:
-                continue
-            export_df = sub_df[[ 'Student', 'Registration Id', 'Course [Course Code]', 'Present %', 'Overall Present %', 'Programme', 'Programme Section']]
-            folder_path = output_folder_path
-            export_pdf(subject_code, export_df.sort_values(by='Programme Section'), folder_path)
+    def export_selected(self):
+        selected_codes = [code for key, (var, code) in self.subject_vars.items() if var.get()]
+        if not self.input_filepath or not self.output_folder_path:
+            messagebox.showwarning("Missing Info", "Please select both input file and output folder.")
+            return
+        if not selected_codes:
+            messagebox.showinfo("No Subjects", "Please select at least one subject to export.")
+            return
 
-            sheet_name = subject_code[:31] if subject_code else "Unknown"
-            export_df.to_excel(writer, sheet_name=sheet_name, index=False)
-        summary.to_excel(writer, sheet_name="Dashboard", index=False)
+        threading.Thread(target=self.run_process, args=(selected_codes,), daemon=True).start()
 
-    wb = load_workbook(output_file)
-    ws = wb["Dashboard"]
-    chart = BarChart()
-    chart.title = "Eligible Students per Subject"
-    chart.x_axis.title = "Subject Code"
-    chart.y_axis.title = "Eligible Students"
-    data = Reference(ws, min_col=3, min_row=1, max_row=ws.max_row)
-    cats = Reference(ws, min_col=1, min_row=2, max_row=ws.max_row)
-    chart.add_data(data, titles_from_data=True)
-    chart.set_categories(cats)
-    chart.width = 20
-    chart.height = 10
-    ws.add_chart(chart, "G2")
+    def export_all(self):
+        all_codes = [code for _, code in self.subject_vars.values()]
+        if not self.input_filepath or not self.output_folder_path:
+            messagebox.showwarning("Missing Info", "Please select both input file and output folder.")
+            return
 
-    rule = ColorScaleRule(start_type='num', start_value=0, start_color='F8696B',
-                          mid_type='num', mid_value=60, mid_color='FFEB84',
-                          end_type='num', end_value=75, end_color='63BE7B')
-    ws.conditional_formatting.add(f'E2:E{ws.max_row}', rule)
+        threading.Thread(target=self.run_process, args=(all_codes,), daemon=True).start()
 
-    wb.save(output_file)
-    return output_file
+    def run_process(self, codes):
+        try:
+            output_file = process_file(self.df.copy(), codes, self.output_folder_path, self.combine_subjects.get())
+            messagebox.showinfo("Success", f"Reports generated successfully.\n\nSaved to:\n{output_file}")
+        except Exception as e:
+            messagebox.showerror("Error", f"An error occurred:\n{str(e)}")
 
-def choose_excel():
-    global input_filepath, subject_code_name_map
-    input_filepath = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx")])
-    if input_filepath:
-        subject_code_name_map.clear()
-        subject_list, df = extract_subject_codes(input_filepath)
-        subject_code_name_map.update({f"{code} - {name}": code for code, name in subject_list})
-        populate_checkboxes(list(subject_code_name_map.keys()))
-        status_label.config(text=f"Loaded {len(subject_list)} subjects")
-
-def choose_output_folder():
-    global output_folder_path
-    output_folder_path = filedialog.askdirectory()
-    if output_folder_path:
-        status_label.config(text=f"Output Folder Selected: {output_folder_path}")
-
-def populate_checkboxes(subject_list):
-    for widget in checkbox_frame.winfo_children():
-        widget.destroy()
-    for sub in subject_list:
-        var = BooleanVar()
-        cb = Checkbutton(checkbox_frame, text=sub, variable=var, bg="#f5f5f5", anchor="w")
-        cb.var = var
-        cb.pack(fill="x", padx=5, pady=2)
-        checkbox_vars[sub] = cb
-
-def filter_checkboxes(*args):
-    query = search_var.get().lower()
-    for text, cb in checkbox_vars.items():
-        if query in text.lower():
-            cb.pack(fill="x", padx=5, pady=2)
-        else:
-            cb.pack_forget()
-
-def generate_reports():
-    if not input_filepath or not output_folder_path:
-        messagebox.showwarning("Missing Info", "Please select input file and output folder.")
-        return
-
-    selected = [subject_code_name_map[text] for text, cb in checkbox_vars.items() if cb.var.get()]
-    if not selected:
-        messagebox.showwarning("No Selection", "Please select at least one subject.")
-        return
-
-    progress.start()
-    threading.Thread(target=run_report_generation, args=(selected,), daemon=True).start()
-
-def run_report_generation(selected):
-    try:
-        df = pd.read_excel(input_filepath)
-        df = clean_data(df)
-        output = process_file(df, selected)
-        messagebox.showinfo("Success", f"Report saved to:\n{output}")
-    except Exception as e:
-        messagebox.showerror("Error", str(e))
-    finally:
-        progress.stop()
-
-root = Tk()
-root.title("Eligibility Report Generator")
-root.geometry("750x600")
-root.configure(bg="#f5f5f5")
-
-style = ttk.Style(root)
-style.configure("TButton", font=("Segoe UI", 10), padding=6)
-style.configure("TLabel", font=("Segoe UI", 10), background="#f5f5f5")
-
-top_frame = Frame(root, bg="#f5f5f5")
-top_frame.pack(pady=10)
-
-ttk.Button(top_frame, text="Select Excel File", command=choose_excel).grid(row=0, column=0, padx=10)
-ttk.Button(top_frame, text="Select Output Folder", command=choose_output_folder).grid(row=0, column=1, padx=10)
-ttk.Button(top_frame, text="Generate Report", command=generate_reports).grid(row=0, column=2, padx=10)
-
-status_label = Label(root, text="No file selected", bg="#f5f5f5", fg="gray")
-status_label.pack()
-
-search_var = StringVar()
-search_var.trace("w", filter_checkboxes)
-search_entry = Entry(root, textvariable=search_var, font=("Segoe UI", 10), width=50)
-search_entry.pack(pady=5)
-search_entry.insert(0, "Search subjects...")
-
-checkbox_frame_container = Frame(root, bg="#f5f5f5")
-checkbox_frame_container.pack(fill=BOTH, expand=True, padx=10, pady=10)
-
-canvas = Canvas(checkbox_frame_container, bg="#f5f5f5")
-scrollbar = Scrollbar(checkbox_frame_container, orient=VERTICAL, command=canvas.yview)
-checkbox_frame = Frame(canvas, bg="#f5f5f5")
-
-checkbox_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-canvas.create_window((0, 0), window=checkbox_frame, anchor="nw")
-canvas.configure(yscrollcommand=scrollbar.set)
-
-def _on_mousewheel(event):
-    canvas.yview_scroll(int(-1*(event.delta/120)), "units")
-
-canvas.bind_all("<MouseWheel>", _on_mousewheel)
-
-canvas.pack(side=LEFT, fill=BOTH, expand=True)
-scrollbar.pack(side=RIGHT, fill=Y)
-
-progress = ttk.Progressbar(root, mode='indeterminate')
-progress.pack(fill=X, padx=10, pady=10)
-
-checkbox_vars = {}
-
-root.mainloop()
+if __name__ == "__main__":
+    root = Tk()
+    app = EligibilityApp(root)
+    root.mainloop()
