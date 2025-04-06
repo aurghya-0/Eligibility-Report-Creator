@@ -1,10 +1,9 @@
-name: Build EXE
+name: Build and Release EXE
 
 on:
   push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+    tags:
+      - 'v*'   # Trigger on version tags like v1.0, v1.2.3, etc.
   workflow_dispatch:
 
 jobs:
@@ -26,12 +25,12 @@ jobs:
         pip install -r requirements.txt
         pip install pyinstaller
 
-    - name: Build EXE with PyInstaller
-      run: |
-        pyinstaller --onefile --noconsole main.py
+    - name: Build EXE
+      run: pyinstaller --onefile --noconsole eligibility_report.py
 
-    - name: Upload EXE as Artifact
-      uses: actions/upload-artifact@v4
+    - name: Upload Release Asset
+      uses: softprops/action-gh-release@v2
       with:
-        name: eligibility-report-exe
-        path: dist/main.exe
+        files: dist/EligibilityGenerator.exe
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
