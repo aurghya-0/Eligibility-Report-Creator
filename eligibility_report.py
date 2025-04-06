@@ -8,8 +8,9 @@ from openpyxl.chart import BarChart, Reference
 from openpyxl.formatting.rule import ColorScaleRule
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
+from reportlab.lib.units import inch
 import threading
 
 selected_subjects = set()
@@ -22,26 +23,82 @@ def make_safe(name):
 
 def export_pdf(subject_code, df, folder_path):
     filename = os.path.join(folder_path, f"{subject_code}_eligibility.pdf")
-    pdf = SimpleDocTemplate(filename, pagesize=landscape(A4))
+    pdf = SimpleDocTemplate(
+        filename,
+        pagesize=A4,
+        rightMargin=40,
+        leftMargin=40,
+        topMargin=60,
+        bottomMargin=40
+    )
     elements = []
-
     styles = getSampleStyleSheet()
-    title = Paragraph(f"Eligibility List for Subject: <b>{subject_code}</b>", styles["Title"])
-    elements.append(title)
-    elements.append(Spacer(1, 12))
+    normal_style = styles["Normal"]
 
-    data = [df.columns.tolist()] + df.values.tolist()
-    table = Table(data, repeatRows=1)
-    table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.lightblue),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('FONTSIZE', (0, 0), (-1, -1), 8),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
-        ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
-    ]))
-    elements.append(table)
+    # University header
+    header_text = Paragraph(
+        "<b>NSHM Knowledge Campus, Durgapur</b><br/>"
+        "Affiliated to MAKAUT, West Bengal<br/>"
+        f"<b>Subject Eligibility Report</b><br/><b>Subject Code:</b> {subject_code}",
+        ParagraphStyle(
+            name="UniversityHeader",
+            parent=styles["Title"],
+            fontSize=14,
+            leading=18,
+            alignment=1,
+            spaceAfter=20,
+        )
+    )
+    elements.append(header_text)
+    elements.append(Spacer(1, 10))
+
+    # Group by Programme and Section
+    grouped = df.groupby(['Programme', 'Programme Section'])
+    for (programme, section), section_df in grouped:
+        # Section title with both Programme and Section
+        section_title = Paragraph(
+            f"<b>Programme:</b> {programme} | <b>Section:</b> {section}",
+            ParagraphStyle(
+                name="SectionHeader",
+                fontSize=12,
+                leading=14,
+                spaceBefore=12,
+                spaceAfter=8
+            )
+        )
+        elements.append(section_title)
+        section_df = section_df[[ 'Student', 'Registration Id', 'Present %', 'Overall Present %' ]]
+
+        # Prepare column widths based on available width
+        total_width = A4[0] - 80  # page width minus left/right margins
+        num_columns = len(section_df.columns)
+        col_width = total_width / num_columns
+        col_widths = [col_width] * num_columns
+
+        # Wrap headers and cells in Paragraph
+        data = [[Paragraph(str(cell), normal_style) for cell in section_df.columns]]
+        for row in section_df.itertuples(index=False):
+            data.append([Paragraph(str(cell), normal_style) for cell in row])
+
+        # Create the table
+        table = Table(data, repeatRows=1, colWidths=col_widths)
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#E5E5E5")),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+            ('GRID', (0, 0), (-1, -1), 0.4, colors.grey),
+            ('FONTSIZE', (0, 1), (-1, -1), 9),
+            ('ALIGN', (0, 1), (-1, -1), 'LEFT'),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('WORDWRAP', (0, 0), (-1, -1), 'CJK'),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#F9F9F9")])
+        ]))
+        elements.append(table)
+        elements.append(Spacer(1, 16))
+
     pdf.build(elements)
 
 def clean_data(df):
@@ -98,7 +155,7 @@ def process_file(df, selected_subject_codes):
             sub_df = df[(df['Subject Code'] == subject_code) & (df['Subject Eligible'])].copy()
             if sub_df.empty:
                 continue
-            export_df = sub_df[[ 'Student', 'Registration Id', 'Course [Course Code]', 'Present %', 'Overall Present %', 'Programme Section']]
+            export_df = sub_df[[ 'Student', 'Registration Id', 'Course [Course Code]', 'Present %', 'Overall Present %', 'Programme', 'Programme Section']]
             folder_path = output_folder_path
             export_pdf(subject_code, export_df.sort_values(by='Programme Section'), folder_path)
 
