@@ -1,6 +1,7 @@
 # 📊 Student Eligibility Report Generator
 
 A modern and user-friendly desktop tool that processes Excel attendance data to generate subject-wise eligibility reports — with a beautiful GUI, PDF exports, search & filtering, and no need for Python installation!
+![Screenshot](./Eligibility_Generator_Screenshot.png)
 
 ---
 
