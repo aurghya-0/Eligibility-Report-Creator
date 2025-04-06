@@ -26,11 +26,11 @@ jobs:
         pip install pyinstaller
 
     - name: Build EXE
-      run: pyinstaller --onefile --noconsole eligibility_report.py
+      run: pyinstaller --onefile --noconsole --name EligibilityGenerator main.py
 
     - name: Upload Release Asset
       uses: softprops/action-gh-release@v2
       with:
-        files: dist/EligibilityGenerator.exe
+        files: D:/a/Eligibility-Report-Creator/Eligibility-Report-Creator/dist/EligibilityGenerator.exe
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
