@@ -1,5 +1,4 @@
 pandas
 openpyxl
 reportlab
-tkinterdnd2
-ttkbootstrap
+pyside6
