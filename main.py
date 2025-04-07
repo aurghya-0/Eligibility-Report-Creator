@@ -63,7 +63,7 @@ QScrollArea {
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    app.setStyleSheet(modern_qss)
+    # app.setStyleSheet(modern_qss)
     window = EligibilityReportApp()
     window.show()
     sys.exit(app.exec())
