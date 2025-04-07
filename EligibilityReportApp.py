@@ -3,7 +3,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QFileDialog,
     QMessageBox, QLabel, QCheckBox, QLineEdit, QScrollArea
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSettings
 from eligibility_processor import extract_subject_codes, process_file
 
 class EligibilityReportApp(QWidget):
@@ -11,13 +11,14 @@ class EligibilityReportApp(QWidget):
         super().__init__()
         self.setWindowTitle("Eligibility Report Generator")
         self.setGeometry(100, 100, 900, 600)
-
+        self.settings = QSettings("TuringNexus", "EligibilityReportTool")
         self.input_filepath = ""
         self.output_folder_path = ""
         self.subjects = []
         self.selected_subjects = set()
 
         self.initUI()
+        self.load_settings()
 
     def initUI(self):
         main_layout = QHBoxLayout(self)
@@ -83,6 +84,7 @@ class EligibilityReportApp(QWidget):
         if filepath:
             self.input_filepath = filepath
             self.file_label.setText(f"Selected File: {os.path.basename(filepath)}")
+            self.settings.setValue("last_excel", filepath)
             self.load_subjects()
 
     def select_folder(self):
@@ -90,6 +92,23 @@ class EligibilityReportApp(QWidget):
         if folder_path:
             self.output_folder_path = folder_path
             self.folder_label.setText(f"Selected Output Folder: {folder_path}")
+            self.settings.setValue("last_output", folder_path)
+    
+    def load_settings(self):
+        last_excel = self.settings.value("last_excel")
+        last_output = self.settings.value("last_output")
+        combine = self.settings.value("combine_checked", False, type=bool)
+
+        if last_excel and os.path.exists(last_excel):
+            self.input_filepath = last_excel
+            self.file_label.setText(f"Selected File: {os.path.basename(last_excel)}")
+            self.load_subjects()
+
+        if last_output and os.path.exists(last_output):
+            self.output_folder_path = last_output
+            self.folder_label.setText(f"Selected Output Folder: {last_output}")
+
+        self.combine_checkbox.setChecked(combine)
 
     def load_subjects(self):
         try:
