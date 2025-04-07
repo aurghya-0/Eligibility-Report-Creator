@@ -38,6 +38,18 @@ class EligibilityReportApp(QWidget):
         self.select_folder_btn.clicked.connect(self.select_folder)
         left_panel.addWidget(self.select_folder_btn)
 
+        self.percentage_label = QLabel("Overall % Required:")
+        left_panel.addWidget(self.percentage_label)
+        self.overall_percentage_input = QLineEdit()
+        self.overall_percentage_input.setPlaceholderText("e.g., 75")
+        left_panel.addWidget(self.overall_percentage_input)
+
+        self.subjectwise_label = QLabel("Subject-wise % Required:")
+        left_panel.addWidget(self.subjectwise_label)
+        self.subjectwise_percentage_input = QLineEdit()
+        self.subjectwise_percentage_input.setPlaceholderText("e.g., 65")
+        left_panel.addWidget(self.subjectwise_percentage_input)
+
         self.combine_checkbox = QCheckBox("Combine Subjects into One PDF")
         left_panel.addWidget(self.combine_checkbox)
 
@@ -115,7 +127,16 @@ class EligibilityReportApp(QWidget):
             return
 
         try:
-            process_file(self.df, selected_codes, self.output_folder_path, self.combine_checkbox.isChecked())
+            overall_threshold = float(self.overall_percentage_input.text()) if self.overall_percentage_input.text() else 75
+            subjectwise_threshold = float(self.subjectwise_percentage_input.text()) if self.subjectwise_percentage_input.text() else 75
+            process_file(
+                self.df,
+                selected_codes,
+                self.output_folder_path,
+                self.combine_checkbox.isChecked(),
+                overall_threshold,
+                subjectwise_threshold
+            )
             QMessageBox.information(self, "Success", "Reports generated successfully!")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to generate reports: {e}")

@@ -142,15 +142,15 @@ def export_combined_pdf(df, selected_subject_codes, output_folder_path):
     doc.build(elements)
 
 
-def process_file(df, selected_subject_codes, output_folder_path, combine_subjects=False):
+def process_file(df, selected_subject_codes, output_folder_path, combine_subjects=False, overall_threshold=75, subjectwise_threshold=75):
     df['Present %'] = pd.to_numeric(df['Present %'], errors='coerce')
     df['Overall Present %'] = pd.to_numeric(df['Overall Present %'], errors='coerce')
 
     overall_eligible = df[['Registration Id', 'Overall Present %']].drop_duplicates()
-    overall_eligible['Eligible for All Subjects'] = overall_eligible['Overall Present %'] >= 75
+    overall_eligible['Eligible for All Subjects'] = overall_eligible['Overall Present %'] >= overall_threshold
     df = df.merge(overall_eligible[['Registration Id', 'Eligible for All Subjects']], on='Registration Id', how='left')
     df['Subject Eligible'] = df.apply(
-        lambda row: True if row['Eligible for All Subjects'] else row['Present %'] >= 75, axis=1
+        lambda row: True if row['Eligible for All Subjects'] else row['Present %'] >= subjectwise_threshold, axis=1
     )
 
     df['Subject Code'] = df['Course [Course Code]'].apply(
