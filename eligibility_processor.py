@@ -124,16 +124,17 @@ def export_combined_pdf(df, selected_subject_codes, output_folder_path):
 
         
         subject_name = sub_df['Subject Name'].iloc[0]
-        elements.append(Paragraph(f"<b>Subject:</b> {subject_name} ({code})", styles['Heading2']))
         grouped = sub_df.groupby(['Programme', 'Programme Section'])
 
         for i, ((programme, section), section_df) in enumerate(grouped):
             elements.append(PageBreak() if i > 0 else Spacer(1, 12))
             section_title = Paragraph(
-                f"<b>Programme:</b> {programme} | <b>Section:</b> {section}",
+                f"<b>Programme:</b> {programme} <br/><b>Section:</b> {section}",
                 ParagraphStyle(name="SectionHeader", fontSize=12, leading=14, spaceBefore=12, spaceAfter=8)
             )
             elements.append(get_university_header(code))
+            elements.append(Spacer(1, 12))
+            elements.append(Paragraph(f"<b>Subject:</b> {subject_name} ({code})", styles['Heading2']))
             elements.append(Spacer(1, 12))
             elements.append(section_title)
             table = create_section_table(section_df, styles)
