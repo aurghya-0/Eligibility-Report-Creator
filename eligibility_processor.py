@@ -170,6 +170,7 @@ def process_file(df, selected_subject_codes, output_folder_path, combine_subject
         Eligible_Students=('Subject Eligible', lambda x: df.loc[x.index, 'Registration Id'][x].nunique())
     ).reset_index()
     summary['Eligibility %'] = round((summary['Eligible_Students'] / summary['Total_Students']) * 100, 2)
+    summary = summary[summary['Subject Code'].isin(selected_subject_codes)]
 
     output_file = os.path.join(output_folder_path, "subjectwise_eligibility.xlsx")
     with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
